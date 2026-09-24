@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Tạo mã QR bánh trung thu</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<style>
+  html, body { margin: 0; background: #0b0a1a; }
+  canvas { display: block; width: 1200px; height: 1400px; }
+  #result { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="result"></div>
+<script>
+const URL_TT = 'https://binhminh2605.github.io/trung-thu/';
+const S = 2;                                   // xuất ảnh gấp đôi độ phân giải cho nét mịn
+const W = 1200, H = 1400, CX = 600, CY = 630, R = 470;
+const cv = document.getElementById('c');
+cv.width = W * S; cv.height = H * S;
+const ctx = cv.getContext('2d');
+ctx.scale(S, S);
+
+// ---------- tiện ích ----------
+let seed = 7;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+function scallop(r, lobes = 16, amp = .05, dy = 0) {
+  ctx.beginPath();
+  for (let i = 0; i <= 960; i++) {
+    const a = i / 960 * Math.PI * 2;
+    const rr = r * (1 + amp * Math.pow(Math.abs(Math.cos(a * lobes / 2)), .8));
+    const x = CX + Math.cos(a) * rr, y = CY + dy + Math.sin(a) * rr;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+}
+// in nổi: bóng tối lệch xuống phải + ánh sáng lệch lên trái + lớp gốc
+function emboss(drawPath, base, depth = 1.6) {
+  ctx.save(); ctx.translate(depth, depth * 1.4); drawPath(); ctx.fillStyle = 'rgba(78,34,6,.55)'; ctx.fill(); ctx.restore();
+  ctx.save(); ctx.translate(-depth * .8, -depth); drawPath(); ctx.fillStyle = 'rgba(255,228,168,.6)'; ctx.fill(); ctx.restore();
+  drawPath(); ctx.fillStyle = base; ctx.fill();
+}
+function arcText(text, r, centerDeg, font, fill, bottom, spacing = 0) {
+  ctx.save(); ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const chars = [...text], ws = chars.map(ch => ctx.measureText(ch).width + spacing), total = ws.reduce((a, b) => a + b, 0);
+  const dir = bottom ? -1 : 1;
+  let ang = centerDeg * Math.PI / 180 - dir * total / r / 2;
+  chars.forEach((ch, i) => {
+    const a = ang + dir * ws[i] / r / 2;
+    const place = (dx, dy, col) => {
+      ctx.save(); ctx.translate(CX + Math.cos(a) * r + dx, CY + Math.sin(a) * r + dy);
+      ctx.rotate(a + dir * Math.PI / 2); ctx.fillStyle = col; ctx.fillText(ch, 0, 0); ctx.restore();
+    };
+    place(1.4, 2, 'rgba(78,34,6,.6)'); place(-1, -1.2, 'rgba(255,236,190,.55)'); place(0, 0, fill);
+    ang += dir * ws[i] / r;
+  });
+  ctx.restore();
+}
+function blossom(x, y, s, rot, col = '#f7b9cf') {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  for (let i = 0; i < 5; i++) {
+    ctx.rotate(Math.PI * 2 / 5);
+    const g = ctx.createRadialGradient(0, -s * .5, 0, 0, -s * .5, s * .7);
+    g.addColorStop(0, '#fff1f6'); g.addColorStop(.6, col); g.addColorStop(1, '#e27aa2');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(-s * .55, -s * .35, -s * .42, -s * 1.02, -s * .08, -s * .95);
+    ctx.lineTo(0, -s * .82); ctx.lineTo(s * .08, -s * .95);
+    ctx.bezierCurveTo(s * .42, -s * 1.02, s * .55, -s * .35, 0, 0); ctx.fill();
+  }
+  ctx.fillStyle = '#c2406e'; ctx.beginPath(); ctx.arc(0, 0, s * .16, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffe08a';
+  for (let i = 0; i < 7; i++) { const a = i / 7 * 6.28; ctx.beginPath(); ctx.arc(Math.cos(a) * s * .26, Math.sin(a) * s * .26, s * .045, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+function branch(pts, w) {
+  ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#3a2016';
+  for (let i = 1; i < pts.length; i++) {
+    ctx.lineWidth = w * (1 - i / pts.length * .7);
+    ctx.beginPath(); ctx.moveTo(...pts[i - 1]); ctx.lineTo(...pts[i]); ctx.stroke();
+  }
+  ctx.restore();
+}
+function lantern(x, y, s, str) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(230,190,120,.6)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x, y - str); ctx.lineTo(x, y - s * 1.1); ctx.stroke();
+  const glow = ctx.createRadialGradient(x, y, 0, x, y, s * 3.2);
+  glow.addColorStop(0, 'rgba(255,150,60,.45)'); glow.addColorStop(1, 'rgba(255,120,40,0)');
+  ctx.fillStyle = glow; ctx.fillRect(x - s * 3.2, y - s * 3.2, s * 6.4, s * 6.4);
+  const g = ctx.createRadialGradient(x - s * .2, y, s * .1, x, y, s * 1.05);
+  g.addColorStop(0, '#ffe7a0'); g.addColorStop(.45, '#f58a2c'); g.addColorStop(.85, '#c2361c'); g.addColorStop(1, '#7a1a0c');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, s * .85, s, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(120,30,8,.45)'; ctx.lineWidth = 1;
+  [.3, .6].forEach(k => { ctx.beginPath(); ctx.ellipse(x, y, s * .85 * k, s * .98, 0, 0, 7); ctx.stroke(); });
+  ctx.fillStyle = '#b8862e';
+  ctx.beginPath(); ctx.roundRect(x - s * .42, y - s * 1.1, s * .84, s * .2, 2); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(x - s * .36, y + s * .92, s * .72, s * .18, 2); ctx.fill();
+  ctx.strokeStyle = '#c2361c'; ctx.lineWidth = 2.2;
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(x + i * 2, y + s * 1.1); ctx.lineTo(x + i * 2.6, y + s * 1.75); ctx.stroke(); }
+  ctx.restore();
+}
+
+async function draw() {
+
+  // ---------- nền đêm trăng ----------
+  let g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0a0c24'); g.addColorStop(.55, '#1a1433'); g.addColorStop(1, '#0a0814');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 220; i++) {
+    const x = rnd() * W, y = rnd() * H * .95, r = rnd() * 1.3 + .25;
+    ctx.fillStyle = `rgba(255,244,225,${rnd() * .55 + .15})`; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  }
+  // trăng tròn góc phải
+  const mx = 1030, my = 150, mr = 96;
+  g = ctx.createRadialGradient(mx, my, mr * .8, mx, my, mr * 3.4);
+  g.addColorStop(0, 'rgba(255,236,190,.35)'); g.addColorStop(1, 'rgba(255,220,160,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  g = ctx.createRadialGradient(mx - 30, my - 30, 10, mx, my, mr);
+  g.addColorStop(0, '#fffaf0'); g.addColorStop(.7, '#f7e6c2'); g.addColorStop(1, '#e8cf9c');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(mx, my, mr, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(200,170,120,.22)';
+  [[-30, -12, 20], [22, 18, 26], [-8, 40, 13], [34, -34, 11]].forEach(([dx, dy, r]) => { ctx.beginPath(); ctx.arc(mx + dx, my + dy, r, 0, 7); ctx.fill(); });
+  // quầng ấm sau bánh
+  g = ctx.createRadialGradient(CX, CY, R * .7, CX, CY, R * 1.45);
+  g.addColorStop(0, 'rgba(255,165,70,.32)'); g.addColorStop(1, 'rgba(255,140,40,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  // đèn lồng treo góc trái
+  lantern(118, 150, 34, 150); lantern(215, 95, 24, 95); lantern(1150, 400, 22, 400);
+
+  // ---------- bánh trung thu ----------
+  // bóng đổ + thành bánh (tạo độ dày)
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = 60; ctx.shadowOffsetY = 34;
+  scallop(R, 16, .055, 26); ctx.fillStyle = '#6b3710'; ctx.fill(); ctx.restore();
+  scallop(R, 16, .055, 26);
+  g = ctx.createLinearGradient(0, CY - R, 0, CY + R + 30);
+  g.addColorStop(0, '#8a4a18'); g.addColorStop(1, '#5a2c0c'); ctx.fillStyle = g; ctx.fill();
+  // mặt bánh
+  scallop(R, 16, .055);
+  g = ctx.createRadialGradient(CX - R * .35, CY - R * .45, R * .1, CX, CY, R * 1.15);
+  g.addColorStop(0, '#f6cd83'); g.addColorStop(.35, '#e2a452'); g.addColorStop(.75, '#c07a30'); g.addColorStop(1, '#8e4f1c');
+  ctx.fillStyle = g; ctx.fill();
+  // vân nướng mịn
+  ctx.save(); scallop(R, 16, .055); ctx.clip();
+  for (let i = 0; i < 2600; i++) {
+    const a = rnd() * 6.283, r = Math.sqrt(rnd()) * R * 1.06;
+    ctx.fillStyle = rnd() < .55 ? 'rgba(122,62,18,.07)' : 'rgba(255,232,170,.07)';
+    ctx.beginPath(); ctx.arc(CX + Math.cos(a) * r, CY + Math.sin(a) * r, rnd() * 3 + .6, 0, 7); ctx.fill();
+  }
+  // rãnh khía trên viền lượn
+  for (let i = 0; i < 16; i++) {
+    const a = (i + .5) / 16 * Math.PI * 2;
+    for (const [off, col] of [[1.2, 'rgba(90,40,8,.45)'], [-.8, 'rgba(255,225,160,.5)']]) {
+      ctx.strokeStyle = col; ctx.lineWidth = 2.2; ctx.beginPath();
+      ctx.moveTo(CX + Math.cos(a) * R * .9 + off, CY + Math.sin(a) * R * .9 + off);
+      ctx.lineTo(CX + Math.cos(a) * R * 1.02 + off, CY + Math.sin(a) * R * 1.02 + off); ctx.stroke();
+    }
+  }
+  // ánh bóng mặt bánh
+  g = ctx.createRadialGradient(CX - R * .4, CY - R * .5, 0, CX - R * .4, CY - R * .5, R * .9);
+  g.addColorStop(0, 'rgba(255,240,200,.28)'); g.addColorStop(1, 'rgba(255,240,200,0)');
+  ctx.fillStyle = g; ctx.fillRect(CX - R * 1.2, CY - R * 1.2, R * 2.4, R * 2.4);
+  ctx.restore();
+  ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(92,44,10,.65)'; scallop(R, 16, .055); ctx.stroke();
+
+  // gờ tròn nổi
+  const TAU = Math.PI * 2;
+  const ringPath = (r, w) => () => {
+    ctx.beginPath(); ctx.arc(CX, CY, r + w / 2, 0, TAU);
+    ctx.moveTo(CX + r - w / 2, CY); ctx.arc(CX, CY, r - w / 2, TAU, 0, true);
+  };
+  emboss(ringPath(R * .895, 7), '#d99a4c', 1.8);
+  emboss(ringPath(R * .67, 5), '#d99a4c', 1.5);
+
+  // dây hoa in nổi trên vòng
+  const band = R * .78;
+  const vine = () => {
+    ctx.beginPath();
+    for (let i = 0; i <= 720; i++) {
+      const a = i / 720 * Math.PI * 2, r = band + Math.sin(a * 24) * 9;
+      const x = CX + Math.cos(a) * r, y = CY + Math.sin(a) * r;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+  };
+  // chừa chỗ cho chữ ở trên và dưới vòng hoa văn
+  const inText = a => { const d = Math.sin(a); return d < -.78 || d > .8; };
+  for (let k = 0; k < 2; k++) {
+    ctx.save(); ctx.lineWidth = 3;
+    ctx.translate(k ? 1.4 : -.9, k ? 1.9 : -1.1);
+    ctx.strokeStyle = k ? 'rgba(88,40,8,.5)' : 'rgba(255,226,165,.55)';
+    for (let i = 0; i < 720; i++) {
+      const a0 = i / 720 * Math.PI * 2, a1 = (i + 1) / 720 * Math.PI * 2;
+      if (inText(a0)) continue;
+      const r0 = band + Math.sin(a0 * 24) * 9, r1 = band + Math.sin(a1 * 24) * 9;
+      ctx.beginPath(); ctx.moveTo(CX + Math.cos(a0) * r0, CY + Math.sin(a0) * r0); ctx.lineTo(CX + Math.cos(a1) * r1, CY + Math.sin(a1) * r1); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  for (let i = 0; i < 48; i++) {
+    const a = i / 48 * Math.PI * 2;
+    if (inText(a)) continue;
+    const up = i % 2 ? 1 : -1, r = band + up * 20;
+    const x = CX + Math.cos(a) * r, y = CY + Math.sin(a) * r;
+    // lá nhỏ + hoa 4 cánh xen kẽ
+    if (i % 4 < 2) emboss(() => { ctx.beginPath(); ctx.ellipse(x, y, 11, 5, a + up * .6, 0, 7); }, '#d8984a', 1.2);
+    else emboss(() => { ctx.beginPath(); for (let p = 0; p < 4; p++) { const b = a + p * Math.PI / 2; ctx.moveTo(x, y); ctx.ellipse(x + Math.cos(b) * 5, y + Math.sin(b) * 5, 5.5, 3.2, b, 0, 7); } }, '#dea055', 1.1);
+  }
+
+  // chữ in nổi trên mặt bánh
+  arcText('Trung Thu', band, -90, '700 70px "Dancing Script"', '#f3c479', false, 1);
+  arcText('RẰM THÁNG TÁM', band, 90, '600 25px "Be Vietnam Pro"', '#f0c070', true, 6);
+
+  // ---------- mặt bánh tròn ở giữa, mã QR in thẳng lên mặt bánh ----------
+  const qr = qrcode(0, 'H'); qr.addData(URL_TT); qr.make();
+  const n = qr.getModuleCount(), Rc = R * .645;
+  const box = Rc * Math.SQRT2 * .93, cell = box / n;
+  const cx0 = CX - box / 2, cy0 = CY - box / 2;
+  const CREAM = '#f7e2b6';
+  // mặt tròn màu kem vàng (hơi lõm vào, có bóng trong)
+  g = ctx.createRadialGradient(CX - Rc * .3, CY - Rc * .35, Rc * .1, CX, CY, Rc);
+  g.addColorStop(0, '#fdf0d2'); g.addColorStop(.7, CREAM); g.addColorStop(1, '#e9c07c');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(CX, CY, Rc, 0, 7); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.arc(CX, CY, Rc, 0, 7); ctx.clip();
+  ctx.lineWidth = 14; ctx.strokeStyle = 'rgba(120,62,16,.18)'; ctx.beginPath(); ctx.arc(CX + 3, CY + 5, Rc + 4, 0, 7); ctx.stroke();
+  ctx.restore();
+
+  const isFinder = (r, c) => (r < 7 && c < 7) || (r < 7 && c >= n - 7) || (r >= n - 7 && c < 7);
+  const dark = (r, c) => r >= 0 && c >= 0 && r < n && c < n && qr.isDark(r, c) && !isFinder(r, c);
+
+  // hoa văn chấm nhạt lấp phần tròn quanh mã (chừa một viền trống quanh mã)
+  ctx.fillStyle = 'rgba(176,112,44,.26)';
+  const span = Math.ceil(Rc / cell) + 2;
+  for (let r = -span; r < n + span; r++) for (let c = -span; c < n + span; c++) {
+    if (r >= -2 && r < n + 2 && c >= -2 && c < n + 2) continue;
+    const x = cx0 + (c + .5) * cell, y = cy0 + (r + .5) * cell;
+    if (Math.hypot(x - CX, y - CY) > Rc - cell * 1.2) continue;
+    if (rnd() < .5) { ctx.beginPath(); ctx.arc(x, y, cell * .3, 0, 7); ctx.fill(); }
+  }
+
+  // mô-đun mã: chấm tròn liền nhau như giọt mực nâu, in nổi nhẹ
+  const ink = ctx.createLinearGradient(cx0, cy0, cx0 + box, cy0 + box);
+  ink.addColorStop(0, '#4a1f08'); ink.addColorStop(1, '#2a1004');
+  const rr = cell * .46, bw = cell * .84;
+  const modules = () => {
+    ctx.beginPath();
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      if (!dark(r, c)) continue;
+      const x = cx0 + (c + .5) * cell, y = cy0 + (r + .5) * cell;
+      ctx.moveTo(x + rr, y); ctx.arc(x, y, rr, 0, 7);
+      if (dark(r, c + 1)) ctx.rect(x, y - bw / 2, cell, bw);
+      if (dark(r + 1, c)) ctx.rect(x - bw / 2, y, bw, cell);
+    }
+  };
+  ctx.save(); ctx.translate(-.6, -.8); modules(); ctx.fillStyle = 'rgba(255,240,205,.8)'; ctx.fill('nonzero'); ctx.restore();
+  modules(); ctx.fillStyle = ink; ctx.fill('nonzero');
+
+  // mắt định vị: vòng đỏ đèn lồng + lõi nâu
+  const eye = (r0, c0) => {
+    const x = cx0 + c0 * cell, y = cy0 + r0 * cell;
+    const eg = ctx.createLinearGradient(x, y, x + cell * 7, y + cell * 7);
+    eg.addColorStop(0, '#d23a24'); eg.addColorStop(1, '#9a1f14');
+    ctx.fillStyle = eg; ctx.beginPath(); ctx.roundRect(x + cell * .05, y + cell * .05, cell * 6.9, cell * 6.9, cell * 2.3); ctx.fill();
+    ctx.fillStyle = CREAM; ctx.beginPath(); ctx.roundRect(x + cell * 1.05, y + cell * 1.05, cell * 4.9, cell * 4.9, cell * 1.6); ctx.fill();
+    ctx.fillStyle = ink; ctx.beginPath(); ctx.roundRect(x + cell * 2, y + cell * 2, cell * 3, cell * 3, cell * 1.1); ctx.fill();
+  };
+  eye(0, 0); eye(0, n - 7); eye(n - 7, 0);
+
+  // đèn lồng nhỏ ở giữa mã
+  ctx.fillStyle = CREAM; ctx.beginPath(); ctx.arc(CX, CY, cell * 4.3, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#c98f45'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(CX, CY, cell * 3.9, 0, 7); ctx.stroke();
+  lantern(CX, CY + cell * .3, cell * 2.1, cell * 2.9);
+
+  // cành hoa đào ôm góc bánh
+  branch([[40, 1180], [150, 1120], [250, 1085], [330, 1020], [395, 990]], 11);
+  branch([[250, 1085], [300, 1130], [370, 1150]], 5);
+  branch([[150, 1120], [175, 1050], [150, 990]], 4);
+  [[395, 990, 22], [360, 1010, 16], [330, 1030, 19], [372, 1150, 20], [300, 1128, 14], [150, 990, 18], [175, 1045, 15], [240, 1092, 13], [205, 1110, 17], [420, 975, 12]]
+    .forEach(([x, y, s], i) => blossom(x, y, s, i * .7));
+  branch([[1180, 820], [1100, 860], [1030, 930], [985, 985]], 9);
+  branch([[1100, 860], [1080, 800], [1095, 760]], 4);
+  [[985, 985, 20], [1010, 955, 15], [1045, 915, 18], [1095, 760, 16], [1080, 805, 13], [1130, 840, 15], [1060, 890, 12]]
+    .forEach(([x, y, s], i) => blossom(x, y, s, i * .9 + .3));
+  // cánh hoa bay
+  for (let i = 0; i < 22; i++) {
+    const x = rnd() * W, y = 900 + rnd() * 420;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rnd() * 6.28);
+    ctx.fillStyle = `rgba(247,185,207,${.5 + rnd() * .4})`; ctx.beginPath(); ctx.ellipse(0, 0, 6, 3.5, 0, 0, 7); ctx.fill(); ctx.restore();
+  }
+
+
+
+  // ---------- tự kiểm tra: đọc lại mã QR ----------
+  const img = ctx.getImageData(0, 0, W * S, H * S);
+  const found = jsQR(img.data, W * S, H * S);
+  document.getElementById('result').textContent = found ? 'DECODED:' + found.data : 'DECODE_FAILED';
+}
+draw();
+</script>
+</body>
+</html>
